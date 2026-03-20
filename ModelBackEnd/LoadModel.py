@@ -1,5 +1,3 @@
-
-
 print("Importing transformers....")
 from transformers import AutoTokenizer, AutoModelForCausalLM
 print("Importing torch....")
@@ -70,8 +68,6 @@ class Model(nn.Module):
         self.hooks = []
 
     def apply_steering(self, cluster_assignments=None, cluster_magnitudes=None, layer_magnitudes=None):
-        # Clear old hooks safely
-        
         
         # Reset scalars to baseline 1.0
         self.steering_scalars = torch.ones(self.total_heads, device=self.device)
@@ -102,43 +98,54 @@ class Model(nn.Module):
     def inference(self, input_text, cluster_assignments=None, cluster_magnitudes=None, layer_magnitudes=None):
         self.apply_steering(cluster_assignments, cluster_magnitudes, layer_magnitudes)
         
+        # --- 1. FORMAT & TOKENIZE ---
         messages = [
             {"role": "user", "content": input_text}
         ]
         
-        # 2. Apply the model's specific control tokens
         formatted_prompt = self.tokenizer.apply_chat_template(
-            messages, 
-            tokenize=False, 
-            add_generation_prompt=True
+            messages, tokenize=False, add_generation_prompt=True
         )
         
-        # 3. Tokenize the formatted prompt (keeping your left-padding fix)
-        inputs = self.tokenizer(
-            formatted_prompt, 
-            return_tensors="pt", 
-            padding="max_length", 
-            max_length=128, 
-            truncation=True
-        )
-        
+        inputs = self.tokenizer(formatted_prompt, return_tensors="pt")
         inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
         
         with torch.inference_mode():
             outputs = self.model(**inputs, output_attentions=True)
             gen_tokens = self.model.generate(
                 **inputs, 
+                max_new_tokens=50,
                 pad_token_id=self.tokenizer.eos_token_id,
                 do_sample=True,
                 temperature=0.7
             )
             decoded_text = self.tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
         
+        # --- 2. EXTRACT RAW ATTENTION ---
         attentions = torch.stack(outputs.attentions).squeeze(1) 
-        head_data = attentions.mean(dim=-2) 
-        flattened_attentions = head_data.view(self.total_heads, -1).to(torch.float32).cpu().numpy()
+        
+        # --- 3. FLATTEN THE QUERIES ---
+        P = attentions.mean(dim=-2) + 1e-9 
+        
+        # --- 4. CALCULATE STATISTICAL FEATURES ---
+        # FEATURE 1: ENTROPY
+        entropy = -(P * torch.log(P)).sum(dim=-1)
+        
+        # FEATURE 2: MAX WEIGHT
+        max_weight = P.max(dim=-1).values
+        
+        # FEATURE 3: VARIANCE
+        variance = P.var(dim=-1)
+        
+        # --- 5. REASSEMBLE FOR PCA ---
+        head_features = torch.stack([entropy, max_weight, variance], dim=-1)
+        
+        flattened_features = head_features.view(self.total_heads, 3).to(torch.float32).cpu().numpy()
         
         split_output = decoded_text.split('assistant')
         text_output = split_output[len(split_output) - 1]
         
-        return text_output, flattened_attentions
+        return text_output, flattened_features
+    
+    
+    

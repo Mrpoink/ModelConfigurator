@@ -57,7 +57,6 @@ class Map:
             mask = self.labels == i
             head_labels = [f"L{l} H{h}" for l in range(12) for h in range(9)]
 
-            # Inside your plot loop:
             fig.add_scatter(
                 x=self.embedding[mask, 0], 
                 y=self.embedding[mask, 1],
@@ -67,5 +66,5 @@ class Map:
                 name=f"Cluster {i}"
             )
 
-        fig.update_layout(title="SmolLM-135M Attention Latent Space (UMAP)", template="plotly_dark")
+        fig.update_layout(title="Attention Latent Space (UMAP)", template="plotly_dark")
         fig.show()
