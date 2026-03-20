@@ -4,6 +4,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 print("Checking torch...")
 import torch
+print("CUDA Support: ", torch.cuda.is_available())
 print("Torch imported!")
 
 print("Checking umap...")
