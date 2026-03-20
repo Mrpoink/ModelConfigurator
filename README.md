@@ -29,7 +29,7 @@ A dynamic `plotly` heatmap that tracks the actual neurological "spikiness" of th
 
 ---
 
-## 🧠 The Math Under the Hood
+## The Math Under the Hood
 
 ### Feature Extraction for Stability
 To completely decouple the mathematical pipeline from the physical length of the user's prompt, the system evaluates *routing strategy* rather than *positional values*:
@@ -42,13 +42,13 @@ The steering mechanism uses `register_forward_pre_hook` on the `self_attn.o_proj
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 * **Backend Framework:** PyTorch, HuggingFace `transformers`
 * **Frontend UI:** Plotly Dash (`dash`, `dcc`, `html`)
 * **Dimensionality Reduction:** `scikit-learn` (PCA, K-Means), `umap-learn`
 * **Data Manipulation:** NumPy
 
-## ⚙️ Installation & Usage
+## Installation & Usage
 
 1. **Install Dependencies:**
    ```bash
