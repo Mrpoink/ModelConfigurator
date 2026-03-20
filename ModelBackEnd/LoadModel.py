@@ -1,15 +1,17 @@
-from transformers import BertTokenizer, BertModel
+print("Importing transformers....")
+from transformers import AutoTokenizer, AutoModelForCausalLM
+print("Importing torch....")
 import torch
 from torch import nn
 
 class Model(nn.Module):
     
     def __init__(self):
-        
+        super().__init__()
         print("Beginning Tokenizer Load")
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM-135M")
         print("Tokenizer Loaded")
-        self.model = BertModel.from_pretrained('bert-base-uncased', output_attentions=True)
+        self.model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM-135M", output_attentions=True)
         print("Model Loaded")
         
     def inference(self, input):

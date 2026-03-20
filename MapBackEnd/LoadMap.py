@@ -1,10 +1,9 @@
-import torch
+print("Importing umap....")
 import umap
 import numpy as np
 import plotly.graph_objects as go
-from transformers import BertTokenizer, BertModel
+print("Importing GUIs....")
 from sklearn.cluster import KMeans
-import ipywidgets as widgets
 from IPython.display import display
 
 class Map:
@@ -37,7 +36,7 @@ class Map:
     def plot(self):
         
         
-        fig = go.FigureWidget()
+        fig = go.Figure()
 
         for i in range(self.num_clusters):
             mask = self.labels == i
@@ -50,3 +49,4 @@ class Map:
             )
 
         fig.update_layout(title="BERT Attention Latent Space (UMAP)", template="plotly_dark")
+        fig.show()

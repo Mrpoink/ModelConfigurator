@@ -1,10 +1,14 @@
-from MapBackEnd.LoadMap import Map
+import os
+os.environ['NUMBA_THREADING_LAYER'] = 'workqueue'
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+print("Starting imports....")
 from ModelBackEnd.LoadModel import Model
+from MapBackEnd.LoadMap import Map
 import torch
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print("Starting....")
+print("Starting program....")
 
 model = Model()
 map = Map()
@@ -18,6 +22,6 @@ while True:
     
     model_out, attention, input_tensors =  model.inference(userin)
     
-    Map.setup(attention)
+    map.setup(attention)
     
-    Map.plot()
+    map.plot()
