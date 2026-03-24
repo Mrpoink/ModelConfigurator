@@ -114,7 +114,7 @@ class Model(nn.Module):
             outputs = self.model(**inputs, output_attentions=True)
             gen_tokens = self.model.generate(
                 **inputs, 
-                max_new_tokens=50,
+                max_new_tokens=1028,
                 pad_token_id=self.tokenizer.eos_token_id,
                 do_sample=True,
                 temperature=0.7

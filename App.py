@@ -6,6 +6,7 @@ from ModelBackEnd.LoadModel import Model
 from MapBackEnd.LoadMap import Map
 from DashBoardBackend.StateManager import StateManager
 import numpy as np
+import pandas as pd # ADDED: Required for CSV Export
 
 # --- 1. Init ---
 num_clusters = 6
@@ -30,6 +31,10 @@ app.layout = html.Div([
                             style={'backgroundColor': '#00FF41', 'color': 'black', 'fontWeight': 'bold', 'padding': '12px', 'border': 'none', 'cursor': 'pointer'}),
                 html.Button('RESET', id='reset-button', n_clicks=0, 
                             style={'backgroundColor': '#441111', 'color': 'white', 'marginLeft': '5px', 'border': 'none', 'cursor': 'pointer'}),
+                # NEW EXPORT BUTTON & DOWNLOAD COMPONENT
+                html.Button('EXPORT CSV', id='export-button', n_clicks=0, 
+                            style={'backgroundColor': '#114411', 'color': 'white', 'marginLeft': '5px', 'border': 'none', 'cursor': 'pointer'}),
+                dcc.Download(id="download-dataframe-csv")
             ], style={'display': 'flex', 'marginBottom': '10px'}),
             
             html.Div([
@@ -86,6 +91,31 @@ app.layout = html.Div([
 ], style={'backgroundColor': '#0a0a0a', 'minHeight': '100vh', 'fontFamily': 'sans-serif'})
 
 # --- 3. CALLBACKS ---
+
+# NEW CALLBACK: Handle CSV Export without triggering the heavy main callback
+@app.callback(
+    Output("download-dataframe-csv", "data"),
+    Input("export-button", "n_clicks"),
+    prevent_initial_call=True,
+)
+def export_csv(n_clicks):
+    if not state_manager.history:
+        return dash.no_update
+
+    data = []
+    for i, state in enumerate(state_manager.history):
+        data.append({
+            "State_Index": i,
+            "Prompt": state['prompt'],
+            "Model_Output": state['text_out'],
+            "Cluster_Magnitudes": str(state['cluster_mags']),
+            "Layer_Magnitudes": str(state['layer_mags'])
+        })
+
+    df = pd.DataFrame(data)
+    return dcc.send_data_frame(df.to_csv, "smollm_steering_history.csv", index=False)
+
+
 @app.callback(
     [Output('output-text', 'children'),
      Output('tabs-content', 'children'),
@@ -109,7 +139,6 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
     ctx = dash.callback_context
     trigger = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
 
-    # 1. Establish Default UI State (Guarantees UI never deletes itself)
     c_mags = {i: 1.0 for i in range(num_clusters)}
     l_mags = {i: 1.0 for i in range(model_engine.num_layers)}
     text_out = "System Idle. Awaiting Prompt."
@@ -118,7 +147,6 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
     prev_emb = None
     current_features = None
 
-    # 2. Update Magnitudes from UI if they were dragged
     curr_state = state_manager.get_current()
     if curr_state:
         c_mags = curr_state['cluster_mags'].copy()
@@ -132,7 +160,6 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
         for val, id_dict in zip(l_values, l_ids):
             l_mags[id_dict['index']] = val
 
-    # 3. Handle System Triggers
     if trigger == 'reset-button':
         model_engine.clear_hooks()
         visualizer.labels = None
@@ -162,7 +189,6 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
         state_manager.save(prompt, text_out, c_mags, l_mags, current_labels, current_emb, prev_emb, current_features)
         
     else:
-        # Handle Navigation & Toggles safely
         if trigger == 'prev-button' and curr_state is not None:
             state_manager.idx = max(0, state_manager.idx - 1)
         elif trigger == 'next-button' and curr_state is not None:
@@ -172,21 +198,22 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
         if state is not None:
             prompt = state['prompt']
             text_out = state['text_out']
-            c_mags = state['cluster_mags']
-            l_mags = state['layer_mags']
             current_labels = state['labels']
             current_emb = state['emb']
             prev_emb = state['prev_emb']
             current_features = state['features']
+            
+            if trigger in ['prev-button', 'next-button']:
+                c_mags = state['cluster_mags']
+                l_mags = state['layer_mags']
 
-    # --- 4. BUILD BOTH GRAPHS (Always executes) ---
+    # --- 4. BUILD BOTH GRAPHS ---
     umap_fig = go.Figure()
     heat_fig = go.Figure()
 
     if current_emb is not None:
         ref = visualizer.base_embedding if ghost_mode == 'base' else (prev_emb if prev_emb is not None else current_emb)
         
-        # Draw ghosting lines
         for idx in range(len(current_emb)):
             umap_fig.add_scatter(
                 x=[ref[idx, 0], current_emb[idx, 0]], y=[ref[idx, 1], current_emb[idx, 1]],
@@ -213,27 +240,42 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
                     hoverinfo='text', marker=dict(size=10, color=colors[i], line=dict(width=1, color='#000'))
                 )
 
-        # Build Heatmap Data
-        heat_data = np.zeros((model_engine.num_layers, num_clusters))
-        counts = np.zeros((model_engine.num_layers, num_clusters))
+        heat_data = np.zeros((model_engine.num_layers, model_engine.num_heads))
+        
+        hover_clusters = np.zeros((model_engine.num_layers, model_engine.num_heads), dtype=int)
+        
         for head_idx, cluster_id in enumerate(current_labels):
             layer = head_idx // model_engine.num_heads
+            head_num = head_idx % model_engine.num_heads
+            
             raw_variance = current_features[head_idx, 2] 
             steered_activity = raw_variance * c_mags.get(cluster_id, 1.0) * l_mags.get(layer, 1.0)
-            heat_data[layer, cluster_id] += steered_activity
-            counts[layer, cluster_id] += 1
-        
-        with np.errstate(divide='ignore', invalid='ignore'):
-            heat_data = np.true_divide(heat_data, counts)
-            heat_data[np.isnan(heat_data)] = 0
+            
+            heat_data[layer, head_num] = steered_activity
+            
+            
+            hover_clusters[layer, head_num] = cluster_id
         
         heat_fig = px.imshow(
-            heat_data.T, labels=dict(x="Model Layer", y="Intervention Cluster", color="Attention Variance"),
-            x=[f"Layer {i}" for i in range(model_engine.num_layers)], y=[f"Cluster {i}" for i in range(num_clusters)],
+            heat_data.T, 
+            labels=dict(x="Model Layer", y="Attention Head", color="Attention Variance"),
+            x=[f"Layer {i}" for i in range(model_engine.num_layers)], 
+            y=[f"Head {i}" for i in range(model_engine.num_heads)],
             color_continuous_scale='Magma'
         )
+        
+        # 3. Inject the custom metadata array and format the HTML tooltip
+        heat_fig.update_traces(
+            customdata=hover_clusters.T, # Transpose this to match heat_data.T
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "<b>%{y}</b><br>"
+                "Variance (Activity): %{z:.5f}<br>"
+                "<span style='color:#00FF41'><b>Behavioral Cluster: %{customdata}</b></span>"
+                "<extra></extra>" # This removes the annoying secondary trace box Plotly adds
+            )
+        )
 
-    # Apply standard layout formatting regardless of whether data exists
     umap_fig.update_layout(
         template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=600,
         xaxis=dict(showgrid=True, gridcolor='#222', zeroline=True, zerolinecolor='#444'),
@@ -275,4 +317,4 @@ def update_dashboard(run_clicks, reset_clicks, prev_clicks, next_clicks, active_
     return text_out, viz_output, sliders_output, prompt
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050)
+    app.run(debug=True, use_reloader=False, port=8050)

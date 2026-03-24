@@ -24,3 +24,4 @@ class StateManager:
     
     def reset(self):
         self.history = []
+        self.idx = -1

@@ -181,3 +181,5 @@ cython_debug/
 .cursorindexingignore
 
 .env
+
+ModelConfigurator.code-workspace
